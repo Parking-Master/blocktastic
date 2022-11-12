@@ -159,6 +159,11 @@
       <span id="z">0</span>
     </div>
     <script>
+      inventory = {
+        add: function(e) {
+          hotbarItems.indexOf(e.blockType) > -1 ? hotbarItemsQ[e.blockType]++ : (hotbarItems.push(e.blockType), hotbarItemsQ[e.blockType] = 1);
+        }
+      };
       const scene = new THREE.Scene();
       const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, .1, 1000);
       const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
@@ -208,19 +213,19 @@
       raycastTargets = [];
       intersection = null;
       recentIntersection = null;
-      currentItem = "oak-plank";
-      hotbarItems = [
-        currentItem,
-        "grass",
-        "white-concrete",
-        "glowstone-block",
-        "glass"
-      ];
-      for (let i = 0; i < hotbarItems.length; i++) {
-        document.querySelector("#hotbar-item-"+i).src = hotbarItems[i] + "-item.png";
-        document.querySelector("#hotbar-item-"+i).dataset.item = hotbarItems[i];
-      }
+      currentItem = null;
+      hotbarItems = [];
+      hotbarItemsQ = {};
+      setInterval(() => {
+        for (let i = 0; i < 9; i++) {
+          document.querySelector("#hotbar-item-"+i).src = hotbarItems[i] ? hotbarItems[i] + "-item.png" : "";
+          document.querySelector("#hotbar-item-"+i).dataset.item = hotbarItems[i] || "";
+        }
+      }, 500);
       cameraLocked = true;
+      for (let i = 0; i < hotbarItems.length; i++) {
+        hotbarItemsQ[hotbarItems[i]] = 1;
+      }
       light=new THREE.DirectionalLight(0xffffff,2),light.position.set(50,50,50),scene.add(light);
       light2=new THREE.DirectionalLight(0xffffff,.5),light2.position.set(-50,50,-50),scene.add(light2);
       let raycaster = new THREE.Raycaster();
@@ -263,6 +268,7 @@
       });
       function checkTouching(e,t){let o=e.position.y-e.geometry.parameters.height/2,r=e.position.y+e.geometry.parameters.height/2,i=e.position.x+e.geometry.parameters.width/2,p=e.position.x-e.geometry.parameters.width/2,a=e.position.z-e.geometry.parameters.depth/2,m=e.position.z+e.geometry.parameters.depth/2,s=t.position.y-t.geometry.parameters.height/2,h=t.position.y+t.geometry.parameters.height/2,g=t.position.x+t.geometry.parameters.width/2,n=t.position.x-t.geometry.parameters.width/2,y=t.position.z-t.geometry.parameters.depth/2,d=t.position.z+t.geometry.parameters.depth/2;return!(r<s||i<n||o>h||p>g||a>d||m<y)}
       function placeBlock(type) {
+        if (!currentItem) return;
         let intersection = window.intersection;
         if (intersection.object.type == "LineSegments") {
           intersection = raycaster.intersectObjects([intersection.object.parent]);
@@ -271,6 +277,7 @@
         let index = null;
         index = indexDefs[intersection.face.materialIndex];
         let e = block(type, { x: intersection.object.position.x, y: intersection.object.position.y, z: intersection.object.position.z });
+        if (collision(e, follower)) return;
         if (index == "right") {
           if (distanceTo(new THREE.Vector3(e.position.x + 1, e.position.y, e.position.z), camera.position) < 1) return;
           e.position.x += 1;
@@ -303,13 +310,85 @@
           }
         });
       }
+      function collect(e) {
+        e.type == "LineSegments" && (e = e.parent);
+        inventory.add(e);
+        scene.remove(e);
+        e.position.y = -10000;
+        renderer.shadowMap.needsUpdate = true;
+      }
       function destroyBlock(obj) {
         if (obj.type == "LineSegments") {
           obj = obj.parent;
         }
+        let n = false;
+        let u = false;
+        let y = obj.clone();
+        y.getObjectByProperty("type", "LineSegments") && y.remove(y.getObjectByProperty("type", "LineSegments"));
+        y.blockType = obj.blockType;
         obj.position.y = -10000;
         raycastTargets.splice(raycastTargets.indexOf(obj), 1);
         scene.remove(obj);
+        y.scale.set(.3,.3,.3);
+        y.translateX(Math.floor(Math.random()*2)==0?Math.random()/2:-(Math.random()-Math.random()));
+        y.translateZ(Math.floor(Math.random()*2)==0?Math.random()/2:-(Math.random()-Math.random()));
+        scene.add(y);
+        let k = setInterval(() => {
+          y.rotateY(.03);
+          y.translateY(u ? .0005 : -.0005);
+          n && (distanceTo(y.position, follower.position) <= 2 && (collect(y), clearInterval(k)));
+        });
+        setTimeout(() => {
+          n = true;
+        }, 1500);
+        setInterval(() => {
+          u = false;
+          setTimeout(() => {
+            u = true;
+          }, 2000);
+        }, 2000);
+      }
+      function throwBlock() {
+        hotbarItemsQ[currentItem] <= 1 ? hotbarItems.splice(hotbarItems.indexOf(currentItem), 1) : hotbarItemsQ[currentItem]--;
+        let cameraClone = camera.clone();
+        cameraClone.translateZ(-1);
+        cameraClone.position.y = camera.position.y;
+        let obj = block(currentItem, cameraClone.position);
+        let n = false;
+        let u = false;
+        let y = obj.clone();
+        y.getObjectByProperty("type", "LineSegments") && y.remove(y.getObjectByProperty("type", "LineSegments"));
+        y.blockType = obj.blockType;
+        obj.position.y = -10000;
+        raycastTargets.splice(raycastTargets.indexOf(obj), 1);
+        scene.remove(obj);
+        y.scale.set(.3,.3,.3);
+        y.translateX(Math.floor(Math.random()*2)==0?Math.random()/2:-(Math.random()-Math.random()));
+        y.translateZ(Math.floor(Math.random()*2)==0?Math.random()/2:-(Math.random()-Math.random()));
+        scene.add(y);
+        let m = setInterval(() => {
+          scene.traverse((x) => {
+            if (y.position.y <= defaultY - 1) {
+              return clearInterval(m);
+            }
+            y.translateY(-.001);
+            y.translateZ(-.0005);
+          });
+        });
+        let k = setInterval(() => {
+          y.rotateY(.03);
+          y.translateY(u ? .0005 : -.0005);
+          n && (distanceTo(y.position, follower.position) <= 2 && (collect(y), clearInterval(k)));
+        });
+        setTimeout(() => {
+          n = true;
+        }, 1500);
+        setInterval(() => {
+          u = false;
+          setTimeout(() => {
+            u = true;
+          }, 2000);
+        }, 2000);
       }
       function switchItem(type) {
         currentItem = type;
@@ -457,8 +536,12 @@
       }
       isMoving = true;
       isJumping = false;
+      bob = false;
       document.addEventListener("keydown", (e) => {
         isMoving = false;
+        if (e.key.startsWith("Arrow")) {
+          camera.rotateX(bob?.005:-.005),camera.rotateY(bob?-.0025:.0025);setTimeout(()=>{bob?bob=false:bob=true},150);
+        }
         if (e.key == "ArrowUp" && !e.repeat) {
           isWalkingForward = true;
         }
@@ -485,6 +568,7 @@
       });
       document.addEventListener("keyup", (e) => {
         isMoving = true;
+        bob = false;
         if (e.key == "ArrowUp") {
           isWalkingForward = false;
         }
@@ -540,6 +624,7 @@
           }
         });
       }
+      camera.setFocalLength(8);
     </script>
   </body>
 </html>
